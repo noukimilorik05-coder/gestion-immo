@@ -8,16 +8,23 @@ import {
   Pencil, BarChart as LucideBarChart,
   TrendingDown, Coins, UserPlus, Key, ShieldCheck, Shield, Lock, Unlock,
   User, Landmark, AlertTriangle, Wallet, MinusCircle, ArrowUpRight, ArrowDownRight,
-  Menu, X
+  Menu, X, Percent
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, 
   Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
 
-// Utilisation d'une URL relative car le front et le back sont sur le même domaine
+/**
+ * CONFIGURATION SUPABASE
+ * Note : Assurez-vous que le client 'supabase' est initialisé globalement
+ */
+// const SUPABASE_URL = ""; 
+// const SUPABASE_ANON_KEY = "";
+// const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const API_URL = '/api';
-const ADMIN_SECRET_CODE = "1234"; // ✅ Code secret pour l'accès admin
+const ADMIN_SECRET_CODE = "1234"; 
 
 /**
  * UTILS : Formateur monétaire (FCFA / €)
@@ -57,12 +64,38 @@ export default function App() {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(false);
   
-  // État pour la barre latérale escamotable
-  const [isMenuOpen, setIsMenuOpen] = useState(false); 
+  // États des paramètres (Supabase)
+  const [settings, setSettings] = useState({
+    tauxImpot: 0,
+    abattement: 0,
+    devise: localStorage.getItem('app_currency') || 'XAF'
+  });
 
+  const [isMenuOpen, setIsMenuOpen] = useState(false); 
   const [isRegistering, setIsRegistering] = useState(false); 
-  const [currency, setCurrency] = useState(localStorage.getItem('app_currency') || 'XAF');
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+
+  // --- ÉTAPE 1 : CHARGEMENT DES PARAMÈTRES DEPUIS LE CLOUD ---
+  useEffect(() => {
+    const chargerParametres = async () => {
+      if (typeof supabase !== 'undefined' && user) {
+        const { data, error } = await supabase
+          .from('parametres')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+
+        if (data) {
+          setSettings({
+            tauxImpot: data.taux_impot || 0,
+            abattement: data.taux_abattement || 0,
+            devise: data.devise || 'XAF'
+          });
+        }
+      }
+    };
+    chargerParametres();
+  }, [user]);
 
   // --- LOGIQUE DE DÉCONNEXION ---
   const handleLogout = () => {
@@ -115,10 +148,10 @@ export default function App() {
   }), [token]);
 
   useEffect(() => {
-    localStorage.setItem('app_currency', currency);
-  }, [currency]);
+    localStorage.setItem('app_currency', settings.devise);
+  }, [settings.devise]);
 
-  const moneyFormatter = (amount) => formatMoney(amount, currency);
+  const moneyFormatter = (amount) => formatMoney(amount, settings.devise);
   const isAdmin = user?.role === 'admin';
 
   // --- AUTHENTIFICATION ---
@@ -246,14 +279,13 @@ export default function App() {
         />
       )}
 
-      {/* Sidebar escamotable (Fixed sur mobile, Relative sur Desktop) */}
+      {/* Sidebar escamotable */}
       <aside className={`
         ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'} 
         fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white shadow-2xl transition-transform duration-300 ease-in-out no-print flex flex-col
         md:relative md:translate-x-0 md:shadow-none
       `}>
         <div className="p-8 text-center border-b border-slate-800/50 relative">
-          {/* Bouton pour fermer le menu (visible seulement sur mobile) */}
           <button 
             onClick={() => setIsMenuOpen(false)}
             className="absolute top-4 right-4 text-slate-500 hover:text-white md:hidden"
@@ -291,22 +323,12 @@ export default function App() {
             onClick={() => { setActiveTab('profile'); setIsMenuOpen(false); }} 
             className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold transition-all text-sm ${activeTab === 'profile' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
           >
-            <User size={18}/> Mon Profil
+            <User size={18}/> Paramètres
           </button>
 
-          <div className="bg-slate-800/50 p-3 rounded-2xl mb-2">
-            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 block text-center">Devise Locale</label>
-            <div className="flex items-center gap-2">
-              <Coins size={14} className="text-indigo-400" />
-              <select 
-                value={currency} 
-                onChange={(e) => setCurrency(e.target.value)}
-                className="bg-transparent text-xs font-bold outline-none cursor-pointer w-full text-white appearance-none"
-              >
-                <option value="XAF" className="bg-slate-900 text-white">Franc CFA (XAF)</option>
-                <option value="EUR" className="bg-slate-900 text-white">Euro (€)</option>
-              </select>
-            </div>
+          <div className="bg-slate-800/50 p-3 rounded-2xl mb-2 text-center">
+            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Devise active</label>
+            <p className="text-white text-xs font-black">{settings.devise === 'XAF' ? 'Franc CFA (XAF)' : 'Euro (€)'}</p>
           </div>
 
           <button onClick={handleLogout} className="w-full flex items-center gap-2 p-3 text-red-400 hover:bg-red-500/10 rounded-xl font-bold transition-all text-sm group">
@@ -320,14 +342,11 @@ export default function App() {
         <div className="no-print max-w-7xl mx-auto font-bold">
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 text-slate-800 gap-4">
               <div className="flex items-center gap-4 w-full md:w-auto">
-                {/* 3. Bouton "Hamburger" pour mobile */}
                 <button 
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
                   className="md:hidden p-3 bg-white rounded-2xl border shadow-sm text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
+                  <Menu size={24} />
                 </button>
                 
                 <div>
@@ -352,15 +371,14 @@ export default function App() {
               </div>
             </header>
 
-            {/* Vues de l'application */}
             <div className="pb-20 md:pb-0">
-              {activeTab === 'dashboard' && <DashboardView tenants={tenants} shops={shops} payments={payments} expenses={expenses} formatMoney={moneyFormatter} />}
+              {activeTab === 'dashboard' && <DashboardView tenants={tenants} shops={shops} payments={payments} expenses={expenses} formatMoney={moneyFormatter} settings={settings} />}
               {activeTab === 'tenants' && <TenantsView tenants={tenants} shops={shops} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} />}
               {activeTab === 'shops' && <ShopsView shops={shops} tenants={tenants} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} />}
               {activeTab === 'payments' && <PaymentsView tenants={tenants} shops={shops} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} user={user} />}
               {activeTab === 'expenses' && <ExpensesView expenses={expenses} setExpenses={setExpenses} api={api} formatMoney={moneyFormatter} />}
               {activeTab === 'admin' && isAdmin && <AdminView api={api} formatMoney={moneyFormatter} />}
-              {activeTab === 'profile' && <ProfileView user={user} api={api} onRefreshUser={handleRefreshUser} />}
+              {activeTab === 'profile' && <ProfileView user={user} api={api} onRefreshUser={handleRefreshUser} settings={settings} setSettings={setSettings} />}
             </div>
         </div>
       </main>
@@ -368,12 +386,12 @@ export default function App() {
   );
 }
 
-// --- VUES (DASHBOARD, TENANTS, etc. restent inchangés) ---
+// --- VUES ---
 
 /**
  * DASHBOARD VIEW
  */
-function DashboardView({ tenants, shops, payments, expenses, formatMoney }) {
+function DashboardView({ tenants, shops, payments, expenses, formatMoney, settings }) {
   const currentMonth = new Date().toISOString().slice(0, 7);
   
   const availableShopsCount = shops.filter(s => 
@@ -390,7 +408,14 @@ function DashboardView({ tenants, shops, payments, expenses, formatMoney }) {
 
   const totalRevenue = payments.reduce((acc, p) => acc + Number(p.amount), 0);
   const totalExpenses = expenses.reduce((acc, e) => acc + Number(e.amount), 0);
-  const netProfit = totalRevenue - totalExpenses;
+  
+  // Calcul Fiscal
+  const brutNetExpenses = totalRevenue - totalExpenses;
+  const abattementMontant = brutNetExpenses * (settings.abattement / 100);
+  const baseImposable = Math.max(0, brutNetExpenses - abattementMontant);
+  const impotsEstimation = baseImposable * (settings.tauxImpot / 100);
+  
+  const netProfit = brutNetExpenses - impotsEstimation;
   const isProfitPositive = netProfit >= 0;
 
   const tenantsStatus = tenants
@@ -423,11 +448,11 @@ function DashboardView({ tenants, shops, payments, expenses, formatMoney }) {
     <div className="space-y-10 animate-in fade-in duration-500 font-bold text-slate-800">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7 gap-4">
         
-        {/* BÉNÉFICE NET */}
+        {/* BÉNÉFICE NET APRÈS IMPÔTS */}
         <div className={`p-6 rounded-[32px] border-2 shadow-sm transition-all hover:scale-105 flex flex-col justify-between ${isProfitPositive ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
           <div className="flex items-center justify-between mb-4">
             <span className={`text-[9px] font-black uppercase tracking-widest ${isProfitPositive ? 'text-emerald-600' : 'text-red-600'}`}>
-              Bénéfice Net
+              Profit Net (Après Taxes)
             </span>
             <div className={`p-3 rounded-2xl ${isProfitPositive ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
               {isProfitPositive ? <TrendingUpIcon size={20} /> : <TrendingDown size={20} />}
@@ -437,8 +462,8 @@ function DashboardView({ tenants, shops, payments, expenses, formatMoney }) {
             <h3 className={`text-xl md:text-2xl font-black tracking-tighter ${isProfitPositive ? 'text-emerald-700' : 'text-red-700'}`}>
               {formatMoney(netProfit)}
             </h3>
-            <p className={`mt-2 text-[9px] font-bold uppercase italic ${isProfitPositive ? 'text-emerald-500' : 'text-red-500'}`}>
-              {isProfitPositive ? "Résultat positif" : "Résultat déficitaire"}
+            <p className={`mt-2 text-[8px] font-bold uppercase italic ${isProfitPositive ? 'text-emerald-500' : 'text-red-500'}`}>
+               Impôts : -{formatMoney(impotsEstimation)} ({settings.tauxImpot}%)
             </p>
           </div>
         </div>
@@ -460,7 +485,7 @@ function DashboardView({ tenants, shops, payments, expenses, formatMoney }) {
               <h3 className="text-xl md:text-2xl font-black text-slate-800 tracking-tighter">
                 {totalDeposits.toLocaleString()}
               </h3>
-              <span className="text-[10px] font-bold text-slate-400">FCFA</span>
+              <span className="text-[10px] font-bold text-slate-400">{settings.devise}</span>
             </div>
             <p className="mt-2 text-[9px] text-slate-400 font-bold uppercase italic">
               Fonds de garantie
@@ -503,7 +528,7 @@ function DashboardView({ tenants, shops, payments, expenses, formatMoney }) {
              <h3 className="text-xl font-black mb-2 uppercase tracking-tighter">Note de Gestion</h3>
              <p className="text-indigo-100 text-sm leading-relaxed italic font-bold">
                Votre taux d'occupation actuel est de <span className="text-white underline font-black">{occupancyRate}%</span>. 
-               Optimisez vos charges pour augmenter votre bénéfice net.
+               Votre base imposable bénéficie d'un abattement de <span className="text-white font-black">{settings.abattement}%</span> avant impôt de {settings.tauxImpot}%.
              </p>
            </div>
            <div className="mt-8 pt-8 border-t border-indigo-500">
@@ -950,7 +975,6 @@ function ExpensesView({ expenses, setExpenses, api, formatMoney }) {
         </div>
       </div>
 
-      {/* Formulaire d'ajout rapide */}
       <form onSubmit={handleSubmit} className="bg-white p-6 md:p-8 rounded-[32px] shadow-sm border border-slate-100 flex flex-col xl:flex-row gap-6 items-end">
         <div className="w-full xl:flex-1 space-y-2">
           <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Description</label>
@@ -978,11 +1002,10 @@ function ExpensesView({ expenses, setExpenses, api, formatMoney }) {
         </button>
       </form>
 
-      {/* Liste des dépenses */}
       <div className="grid gap-4">
         {expenses.length === 0 ? (
            <div className="bg-white p-20 rounded-[32px] border border-dashed border-slate-200 text-center text-slate-400 italic">
-             Nessuna spesa registrata.
+             Aucune dépense enregistrée.
            </div>
         ) : (
           expenses.map(exp => (
@@ -1008,10 +1031,36 @@ function ExpensesView({ expenses, setExpenses, api, formatMoney }) {
 /**
  * PROFILE VIEW
  */
-function ProfileView({ user, api, onRefreshUser }) {
+function ProfileView({ user, api, onRefreshUser, settings, setSettings }) {
   const [loading, setLoading] = useState(false);
 
-  const handleUpdate = async (e) => {
+  // --- ÉTAPE 2 & 3 : SAUVEGARDE (UPSERT) DANS LE CLOUD ---
+  const enregistrerParametresCloud = async () => {
+    setLoading(true);
+    
+    if (typeof supabase !== 'undefined' && user) {
+      const { error } = await supabase
+        .from('parametres')
+        .upsert({ 
+          user_id: user.id, 
+          taux_impot: settings.tauxImpot, 
+          taux_abattement: settings.abattement, 
+          devise: settings.devise,
+          updated_at: new Date()
+        });
+
+      if (!error) {
+        alert("✅ Réglages enregistrés sur le serveur !");
+      } else {
+        alert("❌ Erreur de sauvegarde : " + error.message);
+      }
+    } else {
+        alert("⚠️ Erreur : Supabase n'est pas initialisé.");
+    }
+    setLoading(false);
+  };
+
+  const handleUpdateProfile = async (e) => {
     e.preventDefault();
     setLoading(true);
     const formData = new FormData(e.target);
@@ -1020,91 +1069,99 @@ function ProfileView({ user, api, onRefreshUser }) {
     if (res && res.id) {
       alert("Profil mis à jour avec succès !");
       onRefreshUser(res); 
-    } else if (res) {
-      alert("Erreur durant l'aggiornamento.");
     }
     setLoading(false);
   };
 
-  const handleResetAccount = async () => {
-    const confirmFirst = window.confirm("ATTENTION: Cette action supprimera DEFINITIVEMENT tous vos locataires et l'historique des paiements. Vos boutiques resteront enregistrées mais redeviendront toutes libres. Voulez-vous continuer?");
-    
-    if (confirmFirst) {
-        const secondConfirm = window.prompt("Tapez 'EFFACER' pour confirmer la suppression définitive.");
-        
-        if (secondConfirm === "EFFACER") {
-            try {
-                await api.post('/reset-account');
-                alert("Account ripulito!");
-                window.location.reload(); 
-            } catch (err) {
-                alert("Erreur durant le reset");
-            }
-        }
-    }
-  };
-
   return (
-    <div className="max-w-2xl mx-auto animate-in fade-in duration-500 text-slate-800 font-bold">
-      <div className="flex items-center gap-4 mb-8">
-        <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex flex-shrink-0 items-center justify-center text-indigo-600">
-           <User size={32}/>
+    <div className="max-w-4xl mx-auto animate-in fade-in duration-500 text-slate-800 font-bold space-y-10 pb-20">
+      
+      {/* SECTION RÉGLAGES FINANCIERS (SUPABASE) */}
+      <div className="bg-white p-6 md:p-10 rounded-[40px] border-2 border-indigo-100 shadow-xl space-y-8">
+        <div className="flex items-center gap-4">
+          <div className="p-4 bg-indigo-600 text-white rounded-2xl shadow-lg">
+             <Percent size={28}/>
+          </div>
+          <div>
+            <h2 className="text-2xl font-black tracking-tight">Réglages du Parc</h2>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1 italic">Configuration fiscale et monétaire</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-2xl md:text-3xl font-black tracking-tight">Mon Profil</h2>
-          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Paramètres de votre espace</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-bold">
+           <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Taux d'Imposition (%)</label>
+              <input 
+                type="number" 
+                value={settings.tauxImpot}
+                onChange={(e) => setSettings({...settings, tauxImpot: Number(e.target.value)})}
+                className="w-full p-4 bg-slate-50 rounded-2xl font-black outline-none focus:ring-2 ring-indigo-500 text-red-600" 
+              />
+           </div>
+           <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Abattement Forfaitaire (%)</label>
+              <input 
+                type="number" 
+                value={settings.abattement}
+                onChange={(e) => setSettings({...settings, abattement: Number(e.target.value)})}
+                className="w-full p-4 bg-slate-50 rounded-2xl font-black outline-none focus:ring-2 ring-indigo-500 text-emerald-600" 
+              />
+           </div>
+           <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Devise Locale</label>
+              <select 
+                value={settings.devise}
+                onChange={(e) => setSettings({...settings, devise: e.target.value})}
+                className="w-full p-4 bg-slate-50 rounded-2xl font-black outline-none focus:ring-2 ring-indigo-500 appearance-none"
+              >
+                <option value="XAF">Franc CFA (XAF)</option>
+                <option value="EUR">Euro (€)</option>
+              </select>
+           </div>
+           <div className="md:col-span-3 pt-4">
+             {/* ÉTAPE 3 : LIEN DU BOUTON */}
+             <button 
+               onClick={enregistrerParametresCloud}
+               disabled={loading} 
+               className="w-full p-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg hover:scale-[1.02] transition-all disabled:opacity-50"
+             >
+                {loading ? "Enregistrement..." : "Sauvegarder les paramètres fiscaux"}
+             </button>
+           </div>
         </div>
       </div>
-      
-      <div className="space-y-8">
-        <form onSubmit={handleUpdate} className="bg-white p-6 md:p-10 rounded-[40px] border border-slate-100 shadow-sm space-y-6 text-slate-800">
+
+      {/* SECTION INFOS PROFIL (API) */}
+      <div className="bg-white p-6 md:p-10 rounded-[40px] border border-slate-100 shadow-sm space-y-6">
+        <h3 className="text-xl font-black uppercase tracking-tighter flex items-center gap-3">
+          <User size={20} className="text-slate-400" /> Mon Compte
+        </h3>
+        <form onSubmit={handleUpdateProfile} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-bold">
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Email de contact</label>
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Email</label>
               <input name="email" defaultValue={user.email} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500" required />
             </div>
-            <div className="space-y-2 font-bold">
+            <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Mot de passe</label>
               <input name="password" type="password" defaultValue={user.password} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500" required />
             </div>
           </div>
-          <div className="space-y-2 font-bold">
-            <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nom de la Propriété / Parc</label>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nom de la Propriété</label>
             <input name="nom_propriete" defaultValue={user.nom_propriete} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500" required />
           </div>
-          <div className="space-y-2 font-bold">
-            <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Numéro WhatsApp</label>
-            <input name="phone" defaultValue={user.phone} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500" required />
-          </div>
-          <button type="submit" disabled={loading} className="w-full p-6 bg-slate-900 text-white rounded-3xl font-black shadow-lg hover:bg-indigo-600 transition-all disabled:opacity-50 uppercase tracking-widest">
-            {loading ? "Enregistrement..." : "Sauvegarder les modifications"}
+          <button type="submit" disabled={loading} className="w-full p-6 bg-slate-900 text-white rounded-3xl font-black uppercase tracking-widest">
+            Sauvegarder les modifications du compte
           </button>
         </form>
-
-        <div className="bg-red-50/50 p-6 md:p-10 rounded-[40px] border-2 border-red-100 space-y-6">
-          <div className="flex items-center gap-3 text-red-600 font-bold">
-            <AlertTriangle size={24}/>
-            <h3 className="text-lg font-black uppercase tracking-tighter">Zone de danger</h3>
-          </div>
-          <p className="text-xs text-red-400 font-bold leading-relaxed">
-            La réinitialisation supprimera définitivement tous vos locataires et l'historique de vos paiements. 
-            Vos boutiques resteront enregistrées mais redeviendront toutes libres.
-          </p>
-          <button 
-            type="button"
-            onClick={handleResetAccount}
-            className="w-full p-6 bg-white border-2 border-red-200 text-red-600 rounded-3xl font-black shadow-sm hover:bg-red-600 hover:text-white hover:border-red-600 transition-all uppercase tracking-widest flex items-center justify-center gap-2"
-          >
-            <Trash2 size={18}/> Réinitialiser tout mon compte
-          </button>
-        </div>
       </div>
     </div>
   );
 }
 
 /**
- * ADMIN VIEW
+ * ADMIN VIEW (Supervision SaaS)
  */
 function AdminView({ api, formatMoney }) {
   const [users, setUsers] = useState([]);
@@ -1129,7 +1186,7 @@ function AdminView({ api, formatMoney }) {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl md:text-3xl font-black uppercase tracking-tight">Supervision SaaS</h2>
-          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Controllo globale della plateforme</p>
+          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Contrôle global de la plateforme</p>
         </div>
         <div className="w-full sm:w-auto bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black shadow-lg text-center">
           Total : {formatMoney(users.reduce((acc, u) => acc + (u.totalCA || 0), 0))}
@@ -1292,9 +1349,9 @@ const Receipt = ({ payment, tenant, shop, user, formatMoney }) => {
             </thead>
             <tbody className="divide-y divide-slate-50">
               <tr>
-                <td className="px-6 py-6 font-bold text-sm text-slate-700 font-bold">Loyer Boutique - {shop?.name || 'N/A'}</td>
-                <td className="px-6 py-6 text-center font-black text-slate-600 text-xs font-bold">{payment.month} ({payment.months_covered} mois)</td>
-                <td className="px-8 py-6 text-right font-black text-2xl text-indigo-600 tracking-tighter font-bold">{formatMoney(payment.amount)}</td>
+                <td className="px-6 py-6 font-bold text-sm text-slate-700">Loyer Boutique - {shop?.name || 'N/A'}</td>
+                <td className="px-6 py-6 text-center font-black text-slate-600 text-xs">{payment.month} ({payment.months_covered} mois)</td>
+                <td className="px-8 py-6 text-right font-black text-2xl text-indigo-600 tracking-tighter">{formatMoney(payment.amount)}</td>
               </tr>
             </tbody>
             <tfoot>
