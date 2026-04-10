@@ -261,7 +261,7 @@ export default function App() {
             <X size={20} />
           </button>
 
-          <h1 className="text-2xl font-black text-indigo-400 tracking-tighter uppercase">Daloparg</h1>
+          <h1 className="text-2xl font-black text-indigo-400 tracking-tighter uppercase">GestionLocataire</h1>
           <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1 italic">SaaS Pro Edition</p>
         </div>
         
@@ -1219,7 +1219,7 @@ function LoginPage({ onLogin, isRegistering, setIsRegistering, onRegister }) {
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-bold">
       <div className="w-full max-w-md bg-white rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in-95 duration-500">
         <div className="text-center font-bold">
-          <h1 className="text-4xl font-black uppercase tracking-tighter text-slate-800">Daloparg</h1>
+          <h1 className="text-4xl font-black uppercase tracking-tighter text-slate-800">GestionLocataire</h1>
           <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-2">SaaS Immobilier</p>
         </div>
         <form onSubmit={isRegistering ? onRegister : onLogin} className="space-y-4 font-bold">
