@@ -95,7 +95,6 @@ export default function App() {
  // --- ÉTAPE 1 : CHARGEMENT DES PARAMÈTRES DEPUIS LE CLOUD ---
  useEffect(() => {
    const chargerParametres = async () => {
-     // Utilisation de la condition robuste 'supabase && user'
      if (supabase && user) {
        const { data, error } = await supabase
          .from('parametres')
@@ -1058,13 +1057,17 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
    
    // Utilisation de la condition robuste 'supabase && user'
    if (supabase && user) {
+     // Ajout d'une vérification de l'ID utilisateur avant l'upsert
+     console.log("ID Utilisateur envoyé:", user?.id);
+     
      const { error } = await supabase
        .from('parametres')
        .upsert({ 
-         user_id: user.id, // On utilise user_id comme clé primaire
-         taux_impot: Number(settings.tauxImpot), 
-         taux_abattement: Number(settings.abattement), 
-         devise: settings.devise
+         user_id: user.id, // S'assurer que ce n'est pas vide et que c'est bien l'ID auth UUID
+         // Force la conversion en nombre pour les colonnes numeric
+         taux_impot: Number(settings.tauxImpot) || 0, 
+         taux_abattement: Number(settings.abattement) || 0, 
+         devise: settings.devise || 'XAF'
        });
 
      if (!error) {
