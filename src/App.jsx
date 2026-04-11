@@ -1061,11 +1061,10 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
      const { error } = await supabase
        .from('parametres')
        .upsert({ 
-         user_id: user.id, 
-         taux_impot: settings.tauxImpot, 
-         taux_abattement: settings.abattement, 
-         devise: settings.devise,
-         updated_at: new Date()
+         user_id: user.id, // On utilise user_id comme clé primaire
+         taux_impot: Number(settings.tauxImpot), 
+         taux_abattement: Number(settings.abattement), 
+         devise: settings.devise
        });
 
      if (!error) {
