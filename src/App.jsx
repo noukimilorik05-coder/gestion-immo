@@ -289,6 +289,17 @@ export default function App() {
          }
          /* Correction pour mobile : on veut voir le reçu même si on n'imprime pas encore */
          .print-only-container { display: block; }
+
+         /* Forcer le zoom pour la capture d'écran sur mobile */
+         @media (max-width: 640px) {
+           .print-only-container {
+             padding: 10px;
+             transform: scale(0.95); /* Réduit légèrement pour que tout entre dans l'écran */
+             transform-origin: top center;
+           }
+           /* On réduit la taille des gros titres sur mobile */
+           .receipt-title { font-size: 1.25rem !important; }
+         }
        `}
      </style>
 
@@ -1296,10 +1307,10 @@ function LoginPage({ onLogin, isRegistering, setIsRegistering, onRegister }) {
 const Receipt = ({ payment, tenant, shop, user, formatMoney }) => {
  if (!payment || !tenant) return null;
  return (
-   <div className="p-8 bg-white border-2 border-slate-100 rounded-[32px] shadow-xl max-w-2xl mx-auto font-sans text-slate-800 font-bold">
+   <div className="w-full p-4 sm:p-8 bg-white border-2 border-slate-100 rounded-[24px] sm:rounded-[32px] shadow-xl max-w-2xl mx-auto font-sans text-slate-800 font-bold overflow-hidden">
      <div className="flex justify-between items-start border-b-2 border-slate-50 pb-8 mb-8 font-bold">
        <div>
-         <h2 className="text-2xl font-black uppercase text-indigo-600 tracking-tight">
+         <h2 className="receipt-title text-2xl font-black uppercase text-indigo-600 tracking-tight">
            {user?.nom_propriete || "REÇU DE LOYER"}
          </h2>
          <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
@@ -1335,16 +1346,21 @@ const Receipt = ({ payment, tenant, shop, user, formatMoney }) => {
          <table className="w-full">
            <thead className="bg-slate-50/50">
              <tr>
-               <th className="px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest text-slate-400">Désignation</th>
-               <th className="px-6 py-4 text-center text-[9px] font-black uppercase tracking-widest text-slate-400">Période</th>
-               <th className="px-8 py-4 text-right text-[9px] font-black uppercase tracking-widest text-slate-400">Total</th>
+               <th className="px-4 py-4 text-left text-[9px] font-black uppercase tracking-widest text-slate-400">Désignation</th>
+               <th className="hidden xs:table-cell px-4 py-4 text-center text-[9px] font-black uppercase tracking-widest text-slate-400">Période</th>
+               <th className="px-4 py-4 text-right text-[9px] font-black uppercase tracking-widest text-slate-400">Total</th>
              </tr>
            </thead>
            <tbody className="divide-y divide-slate-50">
              <tr>
-               <td className="px-6 py-6 font-bold text-sm text-slate-700">Loyer Boutique - {shop?.name || 'N/A'}</td>
-               <td className="px-6 py-6 text-center font-black text-slate-600 text-xs">{payment.month} ({payment.months_covered} mois)</td>
-               <td className="px-8 py-6 text-right font-black text-2xl text-indigo-600 tracking-tighter">{formatMoney(payment.amount)}</td>
+               <td className="px-4 py-6 font-bold text-xs sm:text-sm text-slate-700">
+                 Loyer Boutique {shop?.name}
+                 <div className="xs:hidden text-[10px] text-slate-400">{payment.month}</div>
+               </td>
+               <td className="hidden xs:table-cell px-4 py-6 text-center font-black text-slate-600 text-xs">{payment.month}</td>
+               <td className="px-4 py-6 text-right font-black text-xl sm:text-2xl text-indigo-600 tracking-tighter">
+                 {formatMoney(payment.amount)}
+               </td>
              </tr>
            </tbody>
            <tfoot>
