@@ -16,6 +16,8 @@ import {
 } from 'recharts';
 
 // Configuration Supabase (Clés intégrées directement pour éviter import.meta)
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js';
+
 const supabaseUrl = 'https://nizrvwumstftlkbwnrvu.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5penJ2d3Vtc3RmdGxrYnducnZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1OTI1NjksImV4cCI6MjA5MTE2ODU2OX0.MnVAo0u9i5KwFejRAKrodwHfcNs9xh6L8jKckBo9TXE';
 
@@ -78,15 +80,30 @@ export default function App() {
  const [loading, setLoading] = useState(false);
  const [supabase, setSupabase] = useState(null); 
 
- // --- ÉTAPE B : LOGIQUE D'IMPERSONNALISATION ---
+ // --- ÉTAPE B : LOGIQUE D'IMPERSONNALISATION OPTIMISÉE ---
  const [adminData, setAdminData] = useState(null);
 
- const handleImpersonate = (targetUser) => {
-   setAdminData(user); // On sauvegarde ton profil Admin
-   setUser(targetUser); // On force l'appli à utiliser son profil
-   setActiveTab('dashboard'); // On te redirige sur son Dashboard
-   alert(`Mode Espion activé : Vous voyez le compte de ${targetUser.nom_propriete}`);
- };
+ const handleImpersonate = async (targetUser) => {
+  setAdminData(user); // Sauvegarde de ton profil Admin
+  
+  // 1. On vide les listes actuelles pour éviter les mélanges visuels
+  setTenants([]);
+  setShops([]);
+  setPayments([]);
+  setExpenses([]);
+
+  // 2. On change l'utilisateur actif
+  setUser(targetUser); 
+  
+  // 3. On force le rechargement immédiat des données du nouveau "user"
+  // On utilise setTimeout pour laisser le temps à l'état 'user' de se mettre à jour
+  setTimeout(() => {
+    loadAllData(); 
+    setActiveTab('dashboard');
+  }, 100);
+
+  addLog(adminData || user, "ESPIONNAGE", `Accès au compte de ${targetUser.nom_propriete}`);
+};
 
  const stopImpersonating = () => {
    setUser(adminData);
@@ -222,6 +239,10 @@ export default function App() {
        localStorage.setItem('user', JSON.stringify(data.user));
        setToken(data.token);
        setUser(data.user);
+       
+       // PIÈGE : LOG DE CONNEXION
+       addLog(data.user, "CONNEXION", "L'utilisateur s'est connecté");
+
      } else {
        alert(data.message || "Email ou mot de passe incorrect.");
      }
@@ -259,22 +280,37 @@ export default function App() {
  };
 
  const loadAllData = async () => {
-   if (!token || (activeTab === 'admin' && (user?.role === 'admin' && !adminData))) return;
+   // On vérifie qu'on a un utilisateur, un token et le client Supabase
+   if (!token || !user || !supabase) return;
+   
+   // Vérification spécifique pour l'onglet admin (ne pas charger les données du parc si on est en vue système pure)
+   if (activeTab === 'admin' && user?.role === 'admin' && !adminData) return;
+   
    setLoading(true);
-   const [tData, sData, pData, eData] = await Promise.all([
-     api.get('/tenants'),
-     api.get('/shops'),
-     api.get('/payments'),
-     api.get('/expenses')
-   ]);
-   if (tData) setTenants(Array.isArray(tData) ? tData : []);
-   if (sData) setShops(Array.isArray(sData) ? sData : []);
-   if (pData) setPayments(Array.isArray(pData) ? pData : []);
-   if (eData) setExpenses(Array.isArray(eData) ? eData : []);
+   
+   try {
+     // On récupère les données filtrées par l'ID de l'utilisateur cible (très important pour le mode espion)
+     const [tRes, sRes, pRes, eRes] = await Promise.all([
+       supabase.from('tenants').select('*').eq('user_id', user.id),
+       supabase.from('shops').select('*').eq('user_id', user.id),
+       supabase.from('payments').select('*').eq('user_id', user.id),
+       supabase.from('expenses').select('*').eq('user_id', user.id)
+     ]);
+
+     if (tRes.data) setTenants(tRes.data);
+     if (sRes.data) setShops(sRes.data);
+     if (pRes.data) setPayments(pRes.data);
+     if (eRes.data) setExpenses(eRes.data);
+
+     // Note: On peut garder la structure fallback si nécessaire, mais ici on privilégie Supabase direct
+   } catch (err) {
+     console.error("Erreur de chargement Supabase:", err);
+   }
+
    setLoading(false);
  };
 
- useEffect(() => { loadAllData(); }, [token, activeTab, api, user?.id]);
+ useEffect(() => { loadAllData(); }, [token, activeTab, api, user?.id, supabase]);
 
  const handleRefreshUser = (newData) => {
    setUser(newData);
@@ -419,7 +455,7 @@ export default function App() {
      {/* Zone de contenu principale */}
      <main className="flex-1 p-4 md:p-10 print:m-0 print:p-0 overflow-x-hidden pt-16 md:pt-10">
        
-       {/* ÉTAPE C : LE BANDEAU DE SÉCURITÉ "MODE ESPION" */}
+       {/* BANDEAU DE SÉCURITÉ "MODE ESPION" */}
        {adminData && (
           <div className="fixed top-0 left-0 right-0 bg-red-600 text-white p-2 z-[100] flex justify-between items-center px-4 md:px-10 shadow-2xl animate-pulse no-print">
             <div className="flex items-center gap-3">
@@ -471,7 +507,7 @@ export default function App() {
 
            <div className="pb-20 md:pb-0">
              {activeTab === 'dashboard' && <DashboardView tenants={tenants} shops={shops} payments={payments} expenses={expenses} formatMoney={moneyFormatter} settings={settings} />}
-             {activeTab === 'tenants' && <TenantsView tenants={tenants} shops={shops} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} />}
+             {activeTab === 'tenants' && <TenantsView tenants={tenants} shops={shops} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} user={user} />}
              {activeTab === 'shops' && <ShopsView shops={shops} tenants={tenants} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} />}
              {activeTab === 'payments' && <PaymentsView tenants={tenants} shops={shops} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} user={user} />}
              {activeTab === 'expenses' && <ExpensesView expenses={expenses} setExpenses={setExpenses} api={api} formatMoney={moneyFormatter} />}
@@ -561,7 +597,7 @@ function DashboardView({ tenants, shops, payments, expenses, formatMoney, settin
              {formatMoney(netProfit)}
            </h3>
            <p className={`mt-2 text-[8px] font-bold uppercase italic ${isProfitPositive ? 'text-emerald-500' : 'text-red-500'}`}>
-              Impôts : -{formatMoney(impotsEstimation)} ({settings.tauxImpot}%)
+             Impôts : -{formatMoney(impotsEstimation)} ({settings.tauxImpot}%)
            </p>
          </div>
        </div>
@@ -625,16 +661,16 @@ function DashboardView({ tenants, shops, payments, expenses, formatMoney, settin
           <div>
             <h3 className="text-xl font-black mb-2 uppercase tracking-tighter">Note de Gestion</h3>
             <p className="text-indigo-100 text-sm leading-relaxed italic font-bold">
-              Votre taux d'occupation actuel est de <span className="text-white underline font-black">{occupancyRate}%</span>. 
-              Votre base imposable bénéficie d'un abattement de <span className="text-white font-black">{settings.abattement}%</span> avant impôt de {settings.tauxImpot}%.
+               Votre taux d'occupation actuel est de <span className="text-white underline font-black">{occupancyRate}%</span>. 
+               Votre base imposable bénéficie d'un abattement de <span className="text-white font-black">{settings.abattement}%</span> avant impôt de {settings.tauxImpot}%.
             </p>
           </div>
           <div className="mt-8 pt-8 border-t border-indigo-500">
-             <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300 mb-1 font-bold">Opportunités</p>
-             <div className="flex items-end gap-2">
-               <p className="text-4xl font-black">{availableShopsCount}</p>
-               <p className="text-sm font-bold text-indigo-300 pb-1">boutiques libres</p>
-             </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-300 mb-1 font-bold">Opportunités</p>
+              <div className="flex items-end gap-2">
+                <p className="text-4xl font-black">{availableShopsCount}</p>
+                <p className="text-sm font-bold text-indigo-300 pb-1">boutiques libres</p>
+              </div>
           </div>
        </div>
      </div>
@@ -645,7 +681,7 @@ function DashboardView({ tenants, shops, payments, expenses, formatMoney, settin
 /**
  * TENANTS VIEW
  */
-function TenantsView({ tenants, shops, payments, api, onRefresh, formatMoney }) {
+function TenantsView({ tenants, shops, payments, api, onRefresh, formatMoney, user }) {
  const [showAdd, setShowAdd] = useState(false);
  const [editingTenant, setEditingTenant] = useState(null);
  const currentMonth = new Date().toISOString().slice(0, 7);
@@ -699,6 +735,8 @@ function TenantsView({ tenants, shops, payments, api, onRefresh, formatMoney }) 
      const res = await api.put(`/tenants/${id}/terminate`);
      if (res && !res.error) {
        onRefresh();
+       // PIÈGE : LOG DE FIN DE BAIL
+       addLog(user, "FIN_BAIL", "Fin de bail pour un locataire");
      } else {
        alert(res?.error || "Erreur lors de la résiliation");
      }
@@ -927,25 +965,25 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
   let message = "";
 
   if (type === 'recu') {
-    // MESSAGE DE CONFIRMATION DE PAIEMENT
-    message = `*REÇU DE LOYER NUMÉRIQUE*%0A` +
-      `--------------------------------%0A` +
-      `Bonjour *${tenant.name}*,%0A%0A` +
-      `Nous confirmons la réception de votre paiement :%0A%0A` +
-      `🏠 *Boutique :* ${shop?.name || 'N/A'}%0A` +
-      `📅 *Date :* ${datePaiement}%0A` +
-      `💳 *Montant :* ${formatMoney(payment.amount)}%0A` +
-      `⏳ *Couverture :* ${payment.months_covered} mois%0A` +
-      `🚨 *PROCHAINE ÉCHÉANCE : ${dateEcheance}*%0A%0A` +
-      `Merci de votre confiance !`;
+     // MESSAGE DE CONFIRMATION DE PAIEMENT
+     message = `*REÇU DE LOYER NUMÉRIQUE*%0A` +
+       `--------------------------------%0A` +
+       `Bonjour *${tenant.name}*,%0A%0A` +
+       `Nous confirmons la réception de votre paiement :%0A%0A` +
+       `🏠 *Boutique :* ${shop?.name || 'N/A'}%0A` +
+       `📅 *Date :* ${datePaiement}%0A` +
+       `💳 *Montant :* ${formatMoney(payment.amount)}%0A` +
+       `⏳ *Couverture :* ${payment.months_covered} mois%0A` +
+       `🚨 *PROCHAINE ÉCHÉANCE : ${dateEcheance}*%0A%0A` +
+       `Merci de votre confiance !`;
   } else {
-    // MESSAGE DE RELANCE (POUR LES RETARDS)
-    message = `*RAPPEL DE PAIEMENT*%0A` +
-      `--------------------------------%0A` +
-      `Bonjour *${tenant.name}*,%0A%0A` +
-      `Sauf erreur de notre part, le loyer de la boutique *${shop?.name || 'N/A'}* est arrivé à échéance.%0A%0A` +
-      `Merci de bien vouloir régulariser votre situation dès que possible.%0A%0A` +
-      `_Si le paiement a déjà été effectué, merci d'ignorer ce message._`;
+     // MESSAGE DE RELANCE (POUR LES RETARDS)
+     message = `*RAPPEL DE PAIEMENT*%0A` +
+       `--------------------------------%0A` +
+       `Bonjour *${tenant.name}*,%0A%0A` +
+       `Sauf erreur de notre part, le loyer de la boutique *${shop?.name || 'N/A'}* est arrivé à échéance.%0A%0A` +
+       `Merci de bien vouloir régulariser votre situation dès que possible.%0A%0A` +
+       `_Si le paiement a déjà été effectué, merci d'ignorer ce message._`;
   }
 
   // Correction automatique du numéro Cameroun
@@ -959,7 +997,7 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
    e.preventDefault(); 
    const formData = new FormData(e.target);
    const tenantIdNum = Number(formData.get('tenant_id'));
-   const startMonth = formData.get('month');          
+   const startMonth = formData.get('month');           
    const monthsCovered = parseInt(formData.get('months_covered')); 
 
    const tenant = tenants.find(t => Number(t.id) === tenantIdNum);
@@ -1243,6 +1281,9 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
           if (error) throw error;
         }
 
+        // PIÈGE : LOG DE RESET COMPTE
+        addLog(user, "RESET_COMPTE", "Suppression totale des données du parc");
+
         alert("✅ Votre compte a été réinitialisé avec succès !");
         window.location.reload(); 
       } catch (err) {
@@ -1504,62 +1545,9 @@ function AdminView({ api, formatMoney, onImpersonate }) {
  );
 }
 
-// --- UI HELPERS ---
-
-function NavItem({ id, label, icon, active, set }) {
- const isActive = active === id;
- return (
-   <button onClick={() => set(id)} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all font-bold ${isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 scale-105' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
-     {icon} {label}
-   </button>
- );
-}
-
-function StatCard({ label, value, icon, color, highlight, sub }) {
- return (
-   <div className={`bg-white p-6 rounded-[32px] border-2 ${color} shadow-sm transition-all hover:scale-105 flex flex-col justify-between font-bold`}>
-     <div className="flex justify-between items-start mb-4">
-       <div className="p-3 bg-slate-50 rounded-2xl">{icon}</div>
-       {highlight && <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse border-4 border-white shadow-sm"></span>}
-     </div>
-     <div>
-       <p className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mb-1 truncate">{label}</p>
-       <p className="text-xl md:text-2xl font-black text-slate-800 tracking-tighter line-clamp-1">{value}</p>
-       {sub && <p className="text-[10px] text-slate-400 mt-1 italic font-bold">{sub}</p>}
-     </div>
-   </div>
- );
-}
-
-function LoginPage({ onLogin, isRegistering, setIsRegistering, onRegister }) {
- return (
-   <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-bold">
-     <div className="w-full max-w-md bg-white rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in-95 duration-500">
-       <div className="text-center font-bold">
-         <h1 className="text-4xl font-black uppercase tracking-tighter text-slate-800">GestionLocataire</h1>
-         <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-2">SaaS Immobilier</p>
-       </div>
-       <form onSubmit={isRegistering ? onRegister : onLogin} className="space-y-4 font-bold">
-         <input name="email" type="email" placeholder="Email" className="w-full p-5 bg-slate-50 rounded-2xl outline-none ring-indigo-500 focus:ring-2 font-bold" required />
-         <input name="password" type="password" placeholder="Mot de passe" className="w-full p-5 bg-slate-50 rounded-2xl outline-none ring-indigo-500 focus:ring-2 font-bold" required />
-         {isRegistering && (
-           <>
-             <input name="phone" placeholder="WhatsApp" className="w-full p-5 bg-slate-50 rounded-2xl outline-none ring-indigo-500 focus:ring-2 font-bold" required />
-             <input name="nom_propriete" placeholder="Nom de la Propriété" className="w-full p-5 bg-slate-50 rounded-2xl outline-none ring-indigo-500 focus:ring-2 font-bold" required />
-           </>
-         )}
-         <button type="submit" className="w-full p-6 bg-indigo-600 text-white rounded-3xl font-black shadow-xl hover:bg-indigo-700 transition-all text-lg uppercase tracking-widest">
-           {isRegistering ? "Créer l'Espace" : "Accéder"}
-         </button>
-       </form>
-       <button onClick={() => setIsRegistering(!isRegistering)} className="w-full text-slate-400 font-black text-xs uppercase tracking-widest hover:text-indigo-600 transition-all text-center">
-         {isRegistering ? "Retour au Login" : "S'enregistrer"}
-       </button>
-     </div>
-   </div>
- );
-}
-
+/**
+ * Receipt Component
+ */
 const Receipt = ({ payment, tenant, shop, user, formatMoney }) => {
  if (!payment || !tenant) return null;
  return (
@@ -1636,3 +1624,57 @@ const Receipt = ({ payment, tenant, shop, user, formatMoney }) => {
    </div>
  );
 };
+
+function NavItem({ id, label, icon, active, set }) {
+ const isActive = active === id;
+ return (
+   <button onClick={() => set(id)} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all font-bold ${isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 scale-105' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+     {icon} {label}
+   </button>
+ );
+}
+
+function StatCard({ label, value, icon, color, highlight, sub }) {
+ return (
+   <div className={`bg-white p-6 rounded-[32px] border-2 ${color} shadow-sm transition-all hover:scale-105 flex flex-col justify-between font-bold`}>
+     <div className="flex justify-between items-start mb-4">
+       <div className="p-3 bg-slate-50 rounded-2xl">{icon}</div>
+       {highlight && <span className="h-3 w-3 rounded-full bg-red-500 animate-pulse border-4 border-white shadow-sm"></span>}
+     </div>
+     <div>
+       <p className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mb-1 truncate">{label}</p>
+       <p className="text-xl md:text-2xl font-black text-slate-800 tracking-tighter line-clamp-1">{value}</p>
+       {sub && <p className="text-[10px] text-slate-400 mt-1 italic font-bold">{sub}</p>}
+     </div>
+   </div>
+ );
+}
+
+function LoginPage({ onLogin, isRegistering, setIsRegistering, onRegister }) {
+ return (
+   <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-bold">
+     <div className="w-full max-w-md bg-white rounded-[40px] p-10 shadow-2xl space-y-8 animate-in zoom-in-95 duration-500">
+       <div className="text-center font-bold">
+         <h1 className="text-4xl font-black uppercase tracking-tighter text-slate-800">GestionLocataire</h1>
+         <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-2">SaaS Immobilier</p>
+       </div>
+       <form onSubmit={isRegistering ? onRegister : onLogin} className="space-y-4 font-bold">
+         <input name="email" type="email" placeholder="Email" className="w-full p-5 bg-slate-50 rounded-2xl outline-none ring-indigo-500 focus:ring-2 font-bold" required />
+         <input name="password" type="password" placeholder="Mot de passe" className="w-full p-5 bg-slate-50 rounded-2xl outline-none ring-indigo-500 focus:ring-2 font-bold" required />
+         {isRegistering && (
+           <>
+             <input name="phone" placeholder="WhatsApp" className="w-full p-5 bg-slate-50 rounded-2xl outline-none ring-indigo-500 focus:ring-2 font-bold" required />
+             <input name="nom_propriete" placeholder="Nom de la Propriété" className="w-full p-5 bg-slate-50 rounded-2xl outline-none ring-indigo-500 focus:ring-2 font-bold" required />
+           </>
+         )}
+         <button type="submit" className="w-full p-6 bg-indigo-600 text-white rounded-3xl font-black shadow-xl hover:bg-indigo-700 transition-all text-lg uppercase tracking-widest">
+           {isRegistering ? "Créer l'Espace" : "Accéder"}
+         </button>
+       </form>
+       <button onClick={() => setIsRegistering(!isRegistering)} className="w-full text-slate-400 font-black text-xs uppercase tracking-widest hover:text-indigo-600 transition-all text-center">
+         {isRegistering ? "Retour au Login" : "S'enregistrer"}
+       </button>
+     </div>
+   </div>
+ );
+}
