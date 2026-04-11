@@ -59,9 +59,9 @@ export default function App() {
  const [payments, setPayments] = useState([]);
  const [expenses, setExpenses] = useState([]);
  const [loading, setLoading] = useState(false);
- const [supabase, setSupabase] = useState(null); // Supabase géré dans le state
+ const [supabase, setSupabase] = useState(null); 
   
- // États des paramètres (Supabase)
+ // États des paramètres
  const [settings, setSettings] = useState({
    tauxImpot: 0,
    abattement: 0,
@@ -276,15 +276,19 @@ export default function App() {
    <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900 font-bold overflow-x-hidden">
      <style>
        {`
-         @media screen { .print-only { display: none; } }
+         @media screen { 
+           .print-only { display: none; } 
+         }
          @media print {
            body * { visibility: hidden; }
-           .print-only, .print-only * { visibility: visible; }
-           .print-only {
+           .print-only-container, .print-only-container * { visibility: visible; }
+           .print-only-container {
              position: absolute; left: 0; top: 0; width: 100%;
-             display: block !important; background: white !important;
+             display: block !important;
            }
          }
+         /* Correction pour mobile : on veut voir le reçu même si on n'imprime pas encore */
+         .print-only-container { display: block; }
        `}
      </style>
 
@@ -819,16 +823,6 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
  const [receiptToPrint, setReceiptToPrint] = useState(null); 
  const currentMonthValue = new Date().toISOString().slice(0, 7);
 
- useEffect(() => {
-   if (receiptToPrint) {
-     const timer = setTimeout(() => {
-       window.print();
-       setReceiptToPrint(null); 
-     }, 500);
-     return () => clearTimeout(timer);
-   }
- }, [receiptToPrint]);
-
  const handlePaymentSubmit = async (e) => {
    e.preventDefault(); 
    const formData = new FormData(e.target);
@@ -912,14 +906,34 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
      </div>
 
      {receiptToPrint && (
-       <div className="print-only">
-         <Receipt 
-           payment={receiptToPrint} 
-           tenant={receiptToPrint.tenant} 
-           shop={receiptToPrint.shop} 
-           formatMoney={formatMoney} 
-           user={user} 
-         />
+       <div className="fixed inset-0 bg-slate-900 z-[100] overflow-y-auto p-4 md:bg-slate-900/80">
+         <div className="max-w-2xl mx-auto bg-white rounded-[32px] relative shadow-2xl">
+           <button 
+             onClick={() => setReceiptToPrint(null)}
+             className="absolute -top-12 right-0 text-white flex items-center gap-2 font-black uppercase text-xs no-print"
+           >
+             <X size={20} /> Fermer
+           </button>
+           
+           <div className="print-only-container">
+             <Receipt 
+               payment={receiptToPrint} 
+               tenant={receiptToPrint.tenant} 
+               shop={receiptToPrint.shop} 
+               formatMoney={formatMoney} 
+               user={user} 
+             />
+           </div>
+
+           <div className="p-6 no-print">
+             <button 
+               onClick={() => window.print()}
+               className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase shadow-lg"
+             >
+               Imprimer ou Sauver en PDF
+             </button>
+           </div>
+         </div>
        </div>
      )}
 
@@ -1051,20 +1065,14 @@ function ExpensesView({ expenses, setExpenses, api, formatMoney }) {
 function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase }) {
  const [loading, setLoading] = useState(false);
 
- // --- ÉTAPE 2 & 3 : SAUVEGARDE (UPSERT) DANS LE CLOUD ---
  const enregistrerParametresCloud = async () => {
    setLoading(true);
-   
-   // Utilisation de la condition robuste 'supabase && user'
    if (supabase && user) {
-     // Ajout d'une vérification de l'ID utilisateur avant l'upsert
      console.log("ID Utilisateur envoyé:", user?.id);
-     
      const { error } = await supabase
        .from('parametres')
        .upsert({ 
-         user_id: user.id, // S'assurer que ce n'est pas vide et que c'est bien l'ID auth UUID
-         // Force la conversion en nombre pour les colonnes numeric
+         user_id: user.id, 
          taux_impot: Number(settings.tauxImpot) || 0, 
          taux_abattement: Number(settings.abattement) || 0, 
          devise: settings.devise || 'XAF'
@@ -1096,8 +1104,6 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
 
  return (
    <div className="max-w-4xl mx-auto animate-in fade-in duration-500 text-slate-800 font-bold space-y-10 pb-20">
-     
-     {/* SECTION RÉGLAGES FINANCIERS (SUPABASE) */}
      <div className="bg-white p-6 md:p-10 rounded-[40px] border-2 border-indigo-100 shadow-xl space-y-8">
        <div className="flex items-center gap-4">
          <div className="p-4 bg-indigo-600 text-white rounded-2xl shadow-lg">
@@ -1112,46 +1118,27 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-bold">
           <div className="space-y-2">
              <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Taux d'Imposition (%)</label>
-             <input 
-               type="number" 
-               value={settings.tauxImpot}
-               onChange={(e) => setSettings({...settings, tauxImpot: Number(e.target.value)})}
-               className="w-full p-4 bg-slate-50 rounded-2xl font-black outline-none focus:ring-2 ring-indigo-500 text-red-600" 
-             />
+             <input type="number" value={settings.tauxImpot} onChange={(e) => setSettings({...settings, tauxImpot: Number(e.target.value)})} className="w-full p-4 bg-slate-50 rounded-2xl font-black outline-none focus:ring-2 ring-indigo-500 text-red-600" />
           </div>
           <div className="space-y-2">
              <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Abattement Forfaitaire (%)</label>
-             <input 
-               type="number" 
-               value={settings.abattement}
-               onChange={(e) => setSettings({...settings, abattement: Number(e.target.value)})}
-               className="w-full p-4 bg-slate-50 rounded-2xl font-black outline-none focus:ring-2 ring-indigo-500 text-emerald-600" 
-             />
+             <input type="number" value={settings.abattement} onChange={(e) => setSettings({...settings, abattement: Number(e.target.value)})} className="w-full p-4 bg-slate-50 rounded-2xl font-black outline-none focus:ring-2 ring-indigo-500 text-emerald-600" />
           </div>
           <div className="space-y-2">
              <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Devise Locale</label>
-             <select 
-               value={settings.devise}
-               onChange={(e) => setSettings({...settings, devise: e.target.value})}
-               className="w-full p-4 bg-slate-50 rounded-2xl font-black outline-none focus:ring-2 ring-indigo-500 appearance-none"
-             >
+             <select value={settings.devise} onChange={(e) => setSettings({...settings, devise: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black outline-none focus:ring-2 ring-indigo-500 appearance-none">
                <option value="XAF">Franc CFA (XAF)</option>
                <option value="EUR">Euro (€)</option>
              </select>
           </div>
           <div className="md:col-span-3 pt-4">
-            <button 
-              onClick={enregistrerParametresCloud}
-              disabled={loading} 
-              className="w-full p-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg hover:scale-[1.02] transition-all disabled:opacity-50"
-            >
+            <button onClick={enregistrerParametresCloud} disabled={loading} className="w-full p-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg hover:scale-[1.02] transition-all disabled:opacity-50">
                {loading ? "Enregistrement..." : "Sauvegarder les paramètres fiscaux"}
             </button>
           </div>
        </div>
      </div>
 
-     {/* SECTION INFOS PROFIL (API) */}
      <div className="bg-white p-6 md:p-10 rounded-[40px] border border-slate-100 shadow-sm space-y-6">
        <h3 className="text-xl font-black uppercase tracking-tighter flex items-center gap-3">
          <User size={20} className="text-slate-400" /> Mon Compte
@@ -1181,7 +1168,7 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
 }
 
 /**
- * ADMIN VIEW (Supervision SaaS)
+ * ADMIN VIEW
  */
 function AdminView({ api, formatMoney }) {
  const [users, setUsers] = useState([]);
@@ -1233,25 +1220,11 @@ function AdminView({ api, formatMoney }) {
                    <p className="font-black text-slate-800 text-lg leading-tight uppercase font-bold">{u.nom_propriete}</p>
                    <p className="text-xs text-slate-400 font-bold">{u.email} • {u.phone}</p>
                  </td>
-                 <td className="p-6 text-center">
-                   <span className="font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg text-sm">
-                     {u.shopCount || 0}
-                   </span>
-                 </td>
-                 <td className="p-6 text-center">
-                   <span className="font-black text-slate-700 bg-slate-100 px-3 py-1 rounded-lg text-sm">
-                     {u.tenantCount || 0}
-                   </span>
-                 </td>
-                 <td className="p-6">
-                   <p className="font-black text-emerald-600 text-lg tracking-tight font-bold">{formatMoney(u.totalCA || 0)}</p>
-                   <p className="text-[9px] font-black text-slate-300 uppercase">Volume cumulé</p>
-                 </td>
+                 <td className="p-6 text-center text-indigo-600 font-black">{u.shopCount || 0}</td>
+                 <td className="p-6 text-center text-slate-700 font-black">{u.tenantCount || 0}</td>
+                 <td className="p-6 text-emerald-600 font-black">{formatMoney(u.totalCA || 0)}</td>
                  <td className="p-6 text-right">
-                   <button 
-                     onClick={() => toggleStatus(u)}
-                     className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase transition-all shadow-sm ${u.is_active ? 'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white'}`}
-                   >
+                   <button onClick={() => toggleStatus(u)} className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase transition-all shadow-sm ${u.is_active ? 'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white'}`}>
                      {u.is_active ? 'Bloquer' : 'Débloquer'}
                    </button>
                  </td>
