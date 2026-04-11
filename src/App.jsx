@@ -19,6 +19,23 @@ import {
 const supabaseUrl = 'https://nizrvwumstftlkbwnrvu.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5penJ2d3Vtc3RmdGxrYnducnZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1OTI1NjksImV4cCI6MjA5MTE2ODU2OX0.MnVAo0u9i5KwFejRAKrodwHfcNs9xh6L8jKckBo9TXE';
 
+/**
+ * FONCTION UTILITAIRE : addLog
+ * Permet d'enregistrer une trace de chaque action importante dans Supabase
+ */
+const addLog = async (currentUser, action, details = "") => {
+  if (typeof window === 'undefined' || !window.supabase || !currentUser) return;
+  
+  const client = window.supabase.createClient(supabaseUrl, supabaseKey);
+  await client.from('logs').insert({
+    user_id: String(currentUser.id),
+    user_name: currentUser.nom_propriete || currentUser.email,
+    action: action,
+    details: details,
+    is_admin_action: currentUser.role === 'admin'
+  });
+};
+
 const API_URL = '/api';
 const ADMIN_SECRET_CODE = "1234"; 
 
@@ -60,6 +77,22 @@ export default function App() {
  const [expenses, setExpenses] = useState([]);
  const [loading, setLoading] = useState(false);
  const [supabase, setSupabase] = useState(null); 
+
+ // --- ÉTAPE B : LOGIQUE D'IMPERSONNALISATION ---
+ const [adminData, setAdminData] = useState(null);
+
+ const handleImpersonate = (targetUser) => {
+   setAdminData(user); // On sauvegarde ton profil Admin
+   setUser(targetUser); // On force l'appli à utiliser son profil
+   setActiveTab('dashboard'); // On te redirige sur son Dashboard
+   alert(`Mode Espion activé : Vous voyez le compte de ${targetUser.nom_propriete}`);
+ };
+
+ const stopImpersonating = () => {
+   setUser(adminData);
+   setAdminData(null);
+   setActiveTab('admin');
+ };
   
  // États des paramètres
  const [settings, setSettings] = useState({
@@ -95,7 +128,7 @@ export default function App() {
  // --- ÉTAPE 1 : CHARGEMENT DES PARAMÈTRES DEPUIS LE CLOUD ---
  useEffect(() => {
    const chargerParametres = async () => {
-     if (supabase && user) {
+     if (supabase && user?.id) {
        const { data, error } = await supabase
          .from('parametres')
          .select('*')
@@ -112,13 +145,14 @@ export default function App() {
      }
    };
    chargerParametres();
- }, [user, supabase]);
+ }, [user?.id, supabase]);
 
  // --- LOGIQUE DE DÉCONNEXION ---
  const handleLogout = () => {
    localStorage.clear();
    setToken(null);
    setUser(null);
+   setAdminData(null);
    setIsAdminUnlocked(false);
    setIsMenuOpen(false);
  };
@@ -169,7 +203,7 @@ export default function App() {
  }, [settings.devise]);
 
  const moneyFormatter = (amount) => formatMoney(amount, settings.devise);
- const isAdmin = user?.role === 'admin';
+ const isAdmin = user?.role === 'admin' || !!adminData; // On reste Admin même en mode espion pour voir l'onglet
 
  // --- AUTHENTICATION ---
  const handleLogin = async (e) => {
@@ -225,7 +259,7 @@ export default function App() {
  };
 
  const loadAllData = async () => {
-   if (!token || (activeTab === 'admin' && isAdmin)) return;
+   if (!token || (activeTab === 'admin' && (user?.role === 'admin' && !adminData))) return;
    setLoading(true);
    const [tData, sData, pData, eData] = await Promise.all([
      api.get('/tenants'),
@@ -240,7 +274,7 @@ export default function App() {
    setLoading(false);
  };
 
- useEffect(() => { loadAllData(); }, [token, activeTab, api]);
+ useEffect(() => { loadAllData(); }, [token, activeTab, api, user?.id]);
 
  const handleRefreshUser = (newData) => {
    setUser(newData);
@@ -248,7 +282,7 @@ export default function App() {
  };
 
  const handleAdminAccess = () => {
-   if (isAdminUnlocked) {
+   if (isAdminUnlocked || !!adminData) {
      setActiveTab('admin');
    } else {
      const code = prompt("Entrez le code de sécurité Administrateur :");
@@ -328,6 +362,19 @@ export default function App() {
          <h1 className="text-2xl font-black text-indigo-400 tracking-tighter uppercase">GestionLocataire</h1>
          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1 italic">SaaS Pro Edition</p>
        </div>
+
+       {/* BANNIÈRE MODE ESPION (SIDEBAR) */}
+       {adminData && (
+          <div className="p-4 bg-orange-500/20 border-b border-orange-500/30 text-center no-print">
+            <p className="text-[10px] font-black uppercase text-orange-400 mb-2 italic tracking-tighter">Mode Espion : {user?.nom_propriete}</p>
+            <button 
+              onClick={stopImpersonating} 
+              className="w-full py-2 bg-orange-600 text-white rounded-xl text-[9px] font-black uppercase shadow-lg shadow-orange-900/20 flex items-center justify-center gap-2"
+            >
+              <LogOut size={12}/> Quitter l'accès
+            </button>
+          </div>
+       )}
        
        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
          <NavItem id="dashboard" label="Dashboard" icon={<LayoutDashboard size={20}/>} active={activeTab} set={(id) => { setActiveTab(id); setIsMenuOpen(false); }} />
@@ -336,14 +383,14 @@ export default function App() {
          <NavItem id="payments" label="Paiements" icon={<CreditCard size={20}/>} active={activeTab} set={(id) => { setActiveTab(id); setIsMenuOpen(false); }} />
          <NavItem id="expenses" label="Dépenses" icon={<Wallet size={20}/>} active={activeTab} set={(id) => { setActiveTab(id); setIsMenuOpen(false); }} />
          
-         {isAdmin && (
+         {(user?.role === 'admin' || !!adminData) && (
            <div className="pt-4 mt-4 border-t border-slate-800">
               <p className="px-6 mb-2 text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">Contrôle Système</p>
               <button 
                 onClick={() => { handleAdminAccess(); setIsMenuOpen(false); }} 
                 className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all font-bold ${activeTab === 'admin' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 scale-105' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
               >
-                {isAdminUnlocked ? <Unlock size={20} className="text-emerald-400"/> : <Lock size={20} className="text-orange-400"/>} 
+                {isAdminUnlocked || !!adminData ? <Unlock size={20} className="text-emerald-400"/> : <Lock size={20} className="text-orange-400"/>} 
                 Super Admin
               </button>
            </div>
@@ -370,7 +417,26 @@ export default function App() {
      </aside>
 
      {/* Zone de contenu principale */}
-     <main className="flex-1 p-4 md:p-10 print:m-0 print:p-0 overflow-x-hidden">
+     <main className="flex-1 p-4 md:p-10 print:m-0 print:p-0 overflow-x-hidden pt-16 md:pt-10">
+       
+       {/* ÉTAPE C : LE BANDEAU DE SÉCURITÉ "MODE ESPION" */}
+       {adminData && (
+          <div className="fixed top-0 left-0 right-0 bg-red-600 text-white p-2 z-[100] flex justify-between items-center px-4 md:px-10 shadow-2xl animate-pulse no-print">
+            <div className="flex items-center gap-3">
+              <ShieldCheck size={20} />
+              <span className="text-[10px] md:text-xs font-black uppercase tracking-widest truncate max-w-[200px] md:max-w-none">
+                MODE SUPERVISION : Vous agissez en tant que {user?.nom_propriete}
+              </span>
+            </div>
+            <button 
+              onClick={stopImpersonating}
+              className="bg-white text-red-600 px-3 py-1 md:px-4 md:py-1 rounded-full text-[9px] font-black uppercase hover:scale-105 transition-all flex-shrink-0"
+            >
+              Quitter
+            </button>
+          </div>
+       )}
+
        <div className="no-print max-w-7xl mx-auto font-bold">
            <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 text-slate-800 gap-4">
              <div className="flex items-center gap-4 w-full md:w-auto">
@@ -383,7 +449,7 @@ export default function App() {
                
                <div>
                  <h1 className="text-2xl md:text-4xl font-black uppercase tracking-tighter line-clamp-1">
-                   {user.nom_propriete || "Mon Parc Immobilier"}
+                   {user?.nom_propriete || "Mon Parc Immobilier"}
                  </h1>
                  <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-1 italic">
                    {activeTab === 'admin' ? "Supervision du Système SaaS" : "Tableau de Bord de Gestion"}
@@ -392,7 +458,7 @@ export default function App() {
              </div>
              
              <div className="flex items-center gap-4 w-full md:w-auto justify-end">
-               {isAdmin && (
+               {(user?.role === 'admin' || !!adminData) && (
                  <span className="bg-amber-100 text-amber-600 px-3 py-1.5 md:px-4 md:py-2 rounded-2xl text-[9px] md:text-[10px] font-black uppercase shadow-sm flex items-center gap-2 border border-amber-200">
                    <Shield size={14} /> <span className="hidden sm:inline">Mode Administrateur</span>
                  </span>
@@ -409,8 +475,8 @@ export default function App() {
              {activeTab === 'shops' && <ShopsView shops={shops} tenants={tenants} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} />}
              {activeTab === 'payments' && <PaymentsView tenants={tenants} shops={shops} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} user={user} />}
              {activeTab === 'expenses' && <ExpensesView expenses={expenses} setExpenses={setExpenses} api={api} formatMoney={moneyFormatter} />}
-             {activeTab === 'admin' && isAdmin && <AdminView api={api} formatMoney={moneyFormatter} />}
-             {activeTab === 'profile' && <ProfileView user={user} api={api} onRefreshUser={handleRefreshUser} settings={settings} setSettings={setSettings} supabase={supabase} tenants={tenants} shops={shops} />}
+             {activeTab === 'admin' && (user?.role === 'admin' || !!adminData) && <AdminView api={api} formatMoney={moneyFormatter} onImpersonate={handleImpersonate} />}
+             {activeTab === 'profile' && user && <ProfileView user={user} api={api} onRefreshUser={handleRefreshUser} settings={settings} setSettings={setSettings} supabase={supabase} tenants={tenants} shops={shops} />}
            </div>
        </div>
      </main>
@@ -981,36 +1047,51 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
        </table>
      </div>
 
+     {/* Logique d'affichage du reçu : Modale interactive avec bouton X */}
      {receiptToPrint && (
-       <div className="fixed inset-0 bg-slate-900 z-[100] overflow-y-auto p-4 md:bg-slate-900/80">
-         <div className="max-w-2xl mx-auto bg-white rounded-[32px] relative shadow-2xl">
-           <button 
-             onClick={() => setReceiptToPrint(null)}
-             className="absolute -top-12 right-0 text-white flex items-center gap-2 font-black uppercase text-xs no-print"
-           >
-             <X size={20} /> Fermer
-           </button>
-           
-           <div className="print-only-container">
-             <Receipt 
-               payment={receiptToPrint} 
-               tenant={receiptToPrint.tenant} 
-               shop={receiptToPrint.shop} 
-               formatMoney={formatMoney} 
-               user={user} 
-             />
-           </div>
+      <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 overflow-y-auto no-print">
+        <div className="relative w-full max-w-2xl my-auto">
+          
+          {/* BOUTON FERMER */}
+          <button 
+            onClick={() => setReceiptToPrint(null)}
+            className="absolute -top-12 right-0 md:-right-12 p-3 text-white hover:text-red-400 transition-colors bg-slate-800 rounded-full shadow-xl no-print"
+            title="Fermer le reçu"
+          >
+            <X size={28} />
+          </button>
 
-           <div className="p-6 no-print">
-             <button 
-               onClick={() => window.print()}
-               className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase shadow-lg"
-             >
-               Imprimer ou Sauver en PDF
-             </button>
-           </div>
-         </div>
-       </div>
+          {/* LE REÇU LUI-MÊME */}
+          <div className="bg-white rounded-[40px] shadow-2xl overflow-hidden">
+            <div className="print-only-container">
+              <Receipt 
+                payment={receiptToPrint} 
+                tenant={receiptToPrint.tenant} 
+                shop={receiptToPrint.shop} 
+                formatMoney={formatMoney} 
+                user={user} 
+              />
+            </div>
+
+            {/* Boutons d'actions en bas */}
+            <div className="p-6 bg-slate-50 border-t flex flex-col gap-3 no-print">
+              <button 
+                onClick={() => window.print()}
+                className="w-full py-5 bg-indigo-600 text-white rounded-3xl font-black uppercase text-sm shadow-lg shadow-indigo-200"
+              >
+                Imprimer ou Sauver en PDF
+              </button>
+              
+              <button 
+                onClick={() => setReceiptToPrint(null)}
+                className="w-full py-4 text-slate-400 font-bold uppercase text-xs"
+              >
+                Retour à la liste
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
      )}
 
      {showAdd && (
@@ -1143,7 +1224,7 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
 
  const handleResetCompte = async () => {
   const confirmation = window.confirm(
-    "⚠️ ATTENTION : Voulez-vous vraiment supprimer TOUS vos locataires, boutiques, paiements et dépenses ? Cette action est irréversible."
+    "⚠️ ATTENTION : Voulez-vous vraiment supprimer TOUS vos locataires, boutiques, paiements et d'épenses ? Cette action est irréversible."
   );
 
   if (confirmation) {
@@ -1199,6 +1280,7 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
  const enregistrerParametresCloud = async () => {
    setLoading(true);
    if (supabase && user) {
+     console.log("ID Utilisateur envoyé:", user?.id);
      const { error } = await supabase
        .from('parametres')
        .upsert({ 
@@ -1279,16 +1361,16 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-bold">
            <div className="space-y-2">
              <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Email</label>
-             <input name="email" defaultValue={user.email} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500" required />
+             <input name="email" defaultValue={user?.email || ""} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500" required />
            </div>
            <div className="space-y-2">
              <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Mot de passe</label>
-             <input name="password" type="password" defaultValue={user.password} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500" required />
+             <input name="password" type="password" defaultValue={user?.password || ""} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500" required />
            </div>
          </div>
          <div className="space-y-2">
            <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nom de la Propriété</label>
-           <input name="nom_propriete" defaultValue={user.nom_propriete} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500" required />
+           <input name="nom_propriete" defaultValue={user?.nom_propriete || ""} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500" required />
          </div>
          <button type="submit" disabled={loading} className="w-full p-6 bg-slate-900 text-white rounded-3xl font-black uppercase tracking-widest">
            Sauvegarder les modifications du compte
@@ -1339,7 +1421,7 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
 /**
  * ADMIN VIEW
  */
-function AdminView({ api, formatMoney }) {
+function AdminView({ api, formatMoney, onImpersonate }) {
  const [users, setUsers] = useState([]);
  const [loading, setLoading] = useState(false);
 
@@ -1355,6 +1437,12 @@ function AdminView({ api, formatMoney }) {
  const toggleStatus = async (u) => {
    const res = await api.put(`/admin/users/${u.id}`, { is_active: !u.is_active });
    if (res) loadUsers();
+ };
+
+ const handleImpersonate = (u) => {
+   if (window.confirm(`Voulez-vous accéder à l'espace de ${u.nom_propriete} ?`)) {
+     onImpersonate(u);
+   }
  };
 
  return (
@@ -1392,11 +1480,21 @@ function AdminView({ api, formatMoney }) {
                  <td className="p-6 text-center text-indigo-600 font-black">{u.shopCount || 0}</td>
                  <td className="p-6 text-center text-slate-700 font-black">{u.tenantCount || 0}</td>
                  <td className="p-6 text-emerald-600 font-black">{formatMoney(u.totalCA || 0)}</td>
-                 <td className="p-6 text-right">
-                   <button onClick={() => toggleStatus(u)} className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase transition-all shadow-sm ${u.is_active ? 'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white'}`}>
-                     {u.is_active ? 'Bloquer' : 'Débloquer'}
-                   </button>
-                 </td>
+                 <td className="p-6 text-right flex items-center justify-end gap-2">
+                    <button 
+                      onClick={() => handleImpersonate(u)}
+                      className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[10px] uppercase hover:bg-indigo-600 hover:text-white transition-all shadow-sm flex items-center gap-2"
+                    >
+                      <User size={14} /> Accéder
+                    </button>
+
+                    <button 
+                      onClick={() => toggleStatus(u)}
+                      className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase transition-all shadow-sm ${u.is_active ? 'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white'}`}
+                    >
+                      {u.is_active ? 'Bloquer' : 'Débloquer'}
+                    </button>
+                  </td>
                </tr>
            ))}
          </tbody>
