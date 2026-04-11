@@ -410,7 +410,7 @@ export default function App() {
              {activeTab === 'payments' && <PaymentsView tenants={tenants} shops={shops} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} user={user} />}
              {activeTab === 'expenses' && <ExpensesView expenses={expenses} setExpenses={setExpenses} api={api} formatMoney={moneyFormatter} />}
              {activeTab === 'admin' && isAdmin && <AdminView api={api} formatMoney={moneyFormatter} />}
-             {activeTab === 'profile' && <ProfileView user={user} api={api} onRefreshUser={handleRefreshUser} settings={settings} setSettings={setSettings} supabase={supabase} />}
+             {activeTab === 'profile' && <ProfileView user={user} api={api} onRefreshUser={handleRefreshUser} settings={settings} setSettings={setSettings} supabase={supabase} tenants={tenants} shops={shops} />}
            </div>
        </div>
      </main>
@@ -446,7 +446,7 @@ function DashboardView({ tenants, shops, payments, expenses, formatMoney, settin
  const abattementMontant = brutNetExpenses * (settings.abattement / 100);
  const baseImposable = Math.max(0, brutNetExpenses - abattementMontant);
  const impotsEstimation = baseImposable * (settings.tauxImpot / 100);
- 
+  
  const netProfit = brutNetExpenses - impotsEstimation;
  const isProfitPositive = netProfit >= 0;
 
@@ -584,6 +584,21 @@ function TenantsView({ tenants, shops, payments, api, onRefresh, formatMoney }) 
  const [editingTenant, setEditingTenant] = useState(null);
  const currentMonth = new Date().toISOString().slice(0, 7);
 
+ // Fonction WhatsApp intégrée pour les relances
+ const envoyerWhatsAppRelance = (tenant, shop) => {
+   const message = `*RAPPEL DE PAIEMENT*%0A` +
+     `--------------------------------%0A` +
+     `Bonjour *${tenant.name}*,%0A%0A` +
+     `Sauf erreur de notre part, le loyer de la boutique *${shop?.name || 'N/A'}* est arrivé à échéance.%0A%0A` +
+     `Merci de bien vouloir régulariser votre situation dès que possible.%0A%0A` +
+     `_Si le paiement a déjà été effectué, merci d'ignorer ce message._`;
+
+   let cleanPhone = tenant.phone.replace(/\D/g, ''); 
+   if (cleanPhone.length === 9) cleanPhone = '237' + cleanPhone;
+
+   window.open(`https://wa.me/${cleanPhone}?text=${message}`, '_blank');
+ };
+
  const handleAdd = async (e) => {
    e.preventDefault();
    const formData = new FormData(e.target);
@@ -641,6 +656,7 @@ function TenantsView({ tenants, shops, payments, api, onRefresh, formatMoney }) 
            const latestPayment = [...tenantPayments].sort((a,b) => b.month.localeCompare(a.month))[0];
            const expiryDate = addMonthsToPeriod(latestPayment?.month, latestPayment?.months_covered || 1) || "0000-00";
            const isLate = expiryDate <= currentMonth;
+           const shop = shops.find(s => Number(s.id) === Number(t.shop_id));
 
            return (
              <div key={t.id} className={`bg-white p-4 md:p-6 rounded-3xl border shadow-sm flex flex-col lg:flex-row lg:items-center justify-between transition-all gap-6 ${isLate ? 'border-red-100 bg-red-50/20' : 'border-slate-100 hover:shadow-md'}`}>
@@ -657,7 +673,7 @@ function TenantsView({ tenants, shops, payments, api, onRefresh, formatMoney }) 
                    </div>
                    <div className="flex flex-wrap gap-2 md:gap-4 items-center mt-1">
                      <span className="flex items-center gap-1 text-slate-400 font-bold text-xs"><Phone size={12}/> {t.phone}</span>
-                     <span className="text-indigo-500 font-black text-xs uppercase tracking-widest">Unité: {shops.find(s => Number(s.id) === Number(t.shop_id))?.name || 'N/A'}</span>
+                     <span className="text-indigo-500 font-black text-xs uppercase tracking-widest">Unité: {shop?.name || 'N/A'}</span>
                    </div>
                  </div>
                </div>
@@ -670,9 +686,12 @@ function TenantsView({ tenants, shops, payments, api, onRefresh, formatMoney }) 
                      </p>
                  </div>
                  <div className="flex items-center gap-2 md:gap-3">
-                     <a href={`https://wa.me/${t.phone}`} target="_blank" className={`p-3 md:p-4 rounded-2xl transition-all ${isLate ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>
+                     <button 
+                       onClick={() => envoyerWhatsAppRelance(t, shop)}
+                       className={`p-3 md:p-4 rounded-2xl transition-all ${isLate ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
+                     >
                          <MessageSquare size={18} />
-                     </a>
+                     </button>
                      <button onClick={() => setEditingTenant(t)} className="p-2 md:p-3 text-slate-400 hover:text-indigo-600 transition-colors">
                          <Pencil size={18} />
                      </button>
@@ -834,6 +853,42 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
  const [receiptToPrint, setReceiptToPrint] = useState(null); 
  const currentMonthValue = new Date().toISOString().slice(0, 7);
 
+ // --- FONCTION WHATSAPP VERSION COMPLÈTE ---
+ const envoyerWhatsApp = (payment, tenant, shop, type = 'recu') => {
+  const dateEcheance = addMonthsToPeriod(payment.month, payment.months_covered || 1);
+  const datePaiement = new Date(payment.created_at || Date.now()).toLocaleDateString('fr-FR');
+  
+  let message = "";
+
+  if (type === 'recu') {
+    // MESSAGE DE CONFIRMATION DE PAIEMENT
+    message = `*REÇU DE LOYER NUMÉRIQUE*%0A` +
+      `--------------------------------%0A` +
+      `Bonjour *${tenant.name}*,%0A%0A` +
+      `Nous confirmons la réception de votre paiement :%0A%0A` +
+      `🏠 *Boutique :* ${shop?.name || 'N/A'}%0A` +
+      `📅 *Date :* ${datePaiement}%0A` +
+      `💳 *Montant :* ${formatMoney(payment.amount)}%0A` +
+      `⏳ *Couverture :* ${payment.months_covered} mois%0A` +
+      `🚨 *PROCHAINE ÉCHÉANCE : ${dateEcheance}*%0A%0A` +
+      `Merci de votre confiance !`;
+  } else {
+    // MESSAGE DE RELANCE (POUR LES RETARDS)
+    message = `*RAPPEL DE PAIEMENT*%0A` +
+      `--------------------------------%0A` +
+      `Bonjour *${tenant.name}*,%0A%0A` +
+      `Sauf erreur de notre part, le loyer de la boutique *${shop?.name || 'N/A'}* est arrivé à échéance.%0A%0A` +
+      `Merci de bien vouloir régulariser votre situation dès que possible.%0A%0A` +
+      `_Si le paiement a déjà été effectué, merci d'ignorer ce message._`;
+  }
+
+  // Correction automatique du numéro Cameroun
+  let cleanPhone = tenant.phone.replace(/\D/g, ''); 
+  if (cleanPhone.length === 9) cleanPhone = '237' + cleanPhone;
+
+  window.open(`https://wa.me/${cleanPhone}?text=${message}`, '_blank');
+ };
+
  const handlePaymentSubmit = async (e) => {
    e.preventDefault(); 
    const formData = new FormData(e.target);
@@ -889,6 +944,7 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
          <tbody className="divide-y divide-slate-50">
            {payments.map(p => {
              const t = tenants.find(x => Number(x.id) === Number(p.tenant_id));
+             const sh = shops.find(s => Number(s.id) === Number(t?.shop_id));
              return (
                <tr key={p.id} className="hover:bg-indigo-50/30 transition-colors font-bold">
                  <td className="px-8 py-6 font-black uppercase text-xs">{t?.name || 'Inconnu'}</td>
@@ -898,16 +954,25 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
                  </td>
                  <td className="px-8 py-6 font-black text-emerald-600">{formatMoney(p.amount)}</td>
                  <td className="px-8 py-6 text-right">
-                   <button 
-                     onClick={() => {
-                       const tenant = tenants.find(x => Number(x.id) === Number(p.tenant_id));
-                       const shop = shops.find(sh => Number(sh.id) === Number(tenant?.shop_id));
-                       setReceiptToPrint({ ...p, tenant, shop });
-                     }} 
-                     className="inline-flex p-3 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-700 hover:text-white transition-all items-center gap-2 justify-end"
-                   >
-                     <Download size={16} /> <span className="text-[10px] font-black uppercase">Reçu</span>
-                   </button>
+                   <div className="flex justify-end gap-2">
+                    <button 
+                      onClick={() => envoyerWhatsApp(p, t, sh, 'recu')}
+                      className="p-3 text-emerald-600 bg-emerald-50 rounded-xl hover:bg-emerald-600 hover:text-white transition-all flex items-center gap-2"
+                      title="Envoyer par WhatsApp"
+                    >
+                      <MessageSquare size={16} />
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const tenant = tenants.find(x => Number(x.id) === Number(p.tenant_id));
+                        const shop = shops.find(sh => Number(sh.id) === Number(tenant?.shop_id));
+                        setReceiptToPrint({ ...p, tenant, shop });
+                      }} 
+                      className="inline-flex p-3 text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-700 hover:text-white transition-all items-center gap-2"
+                    >
+                      <Download size={16} /> <span className="text-[10px] font-black uppercase">Reçu</span>
+                    </button>
+                   </div>
                  </td>
                </tr>
              );
@@ -1073,13 +1138,67 @@ function ExpensesView({ expenses, setExpenses, api, formatMoney }) {
 /**
  * PROFILE VIEW
  */
-function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase }) {
+function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase, tenants, shops }) {
  const [loading, setLoading] = useState(false);
+
+ const handleResetCompte = async () => {
+  const confirmation = window.confirm(
+    "⚠️ ATTENTION : Voulez-vous vraiment supprimer TOUS vos locataires, boutiques, paiements et dépenses ? Cette action est irréversible."
+  );
+
+  if (confirmation) {
+    const code = prompt("Entrez 'RESET' en majuscules pour confirmer :");
+    if (code === 'RESET') {
+      setLoading(true);
+      try {
+        const tables = ['payments', 'expenses', 'tenants', 'shops'];
+        
+        for (const table of tables) {
+          const { error } = await supabase
+            .from(table)
+            .delete()
+            .eq('user_id', user.id); 
+          
+          if (error) throw error;
+        }
+
+        alert("✅ Votre compte a été réinitialisé avec succès !");
+        window.location.reload(); 
+      } catch (err) {
+        alert("❌ Erreur lors de la réinitialisation : " + err.message);
+      }
+      setLoading(false);
+    } else {
+      alert("Code incorrect, action annulée.");
+    }
+  }
+ };
+
+ const exportToExcel = () => {
+  const headers = ["Nom Locataire", "Boutique", "Montant Loyer", "Téléphone", "Statut"];
+  const rows = tenants.map(t => {
+    const shop = shops.find(s => Number(s.id) === Number(t.shop_id));
+    return [
+      t.name,
+      shop?.name || "N/A",
+      t.rent_amount,
+      t.phone,
+      t.is_active ? "Actif" : "Parti"
+    ].join(",");
+  });
+
+  const csvContent = [headers.join(","), ...rows].join("\n");
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", `Export_Parc_Immo_${new Date().toLocaleDateString()}.csv`);
+  link.click();
+ };
 
  const enregistrerParametresCloud = async () => {
    setLoading(true);
    if (supabase && user) {
-     console.log("ID Utilisateur envoyé:", user?.id);
      const { error } = await supabase
        .from('parametres')
        .upsert({ 
@@ -1115,8 +1234,9 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
 
  return (
    <div className="max-w-4xl mx-auto animate-in fade-in duration-500 text-slate-800 font-bold space-y-10 pb-20">
+     {/* RÉGLAGES FISCAUX */}
      <div className="bg-white p-6 md:p-10 rounded-[40px] border-2 border-indigo-100 shadow-xl space-y-8">
-       <div className="flex items-center gap-4">
+       <div className="flex items-center gap-4 border-b border-slate-50 pb-6">
          <div className="p-4 bg-indigo-600 text-white rounded-2xl shadow-lg">
             <Percent size={28}/>
          </div>
@@ -1150,6 +1270,7 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
        </div>
      </div>
 
+     {/* INFOS COMPTE */}
      <div className="bg-white p-6 md:p-10 rounded-[40px] border border-slate-100 shadow-sm space-y-6">
        <h3 className="text-xl font-black uppercase tracking-tighter flex items-center gap-3">
          <User size={20} className="text-slate-400" /> Mon Compte
@@ -1173,6 +1294,43 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
            Sauvegarder les modifications du compte
          </button>
        </form>
+     </div>
+
+     {/* SAUVEGARDE ET EXPORT */}
+     <div className="bg-white p-6 md:p-10 rounded-[40px] border border-slate-100 shadow-sm space-y-4">
+       <div className="flex items-center gap-4">
+         <div className="p-4 bg-emerald-100 text-emerald-600 rounded-2xl">
+            <Download size={28}/>
+         </div>
+         <div>
+           <h2 className="text-2xl font-black tracking-tight text-slate-800">Sauvegarde des données</h2>
+           <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Exporter votre parc au format Excel</p>
+         </div>
+       </div>
+
+       <button 
+         onClick={exportToExcel}
+         className="w-full p-5 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg hover:scale-[1.02] transition-all"
+       >
+         Télécharger la liste des locataires (.CSV)
+       </button>
+     </div>
+
+     {/* ZONE DE DANGER */}
+     <div className="bg-red-50 p-6 md:p-10 rounded-[40px] border border-red-100 shadow-sm space-y-6">
+       <h3 className="text-xl font-black uppercase tracking-tighter flex items-center gap-3 text-red-600">
+         <AlertTriangle size={20} /> Zone de Danger
+       </h3>
+       <p className="text-sm text-slate-500 font-bold">
+         La réinitialisation supprimera définitivement toutes vos données (locataires, boutiques, paiements, d'épenses).
+       </p>
+       <button 
+         onClick={handleResetCompte}
+         disabled={loading}
+         className="w-full p-6 bg-red-600 text-white rounded-3xl font-black uppercase tracking-widest shadow-lg hover:bg-red-700 transition-all disabled:opacity-50"
+       >
+         Réinitialiser tout le compte
+       </button>
      </div>
    </div>
  );
