@@ -508,9 +508,9 @@ export default function App() {
            <div className="pb-20 md:pb-0">
              {activeTab === 'dashboard' && <DashboardView tenants={tenants} shops={shops} payments={payments} expenses={expenses} formatMoney={moneyFormatter} settings={settings} />}
              {activeTab === 'tenants' && <TenantsView tenants={tenants} shops={shops} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} user={user} />}
-             {activeTab === 'shops' && <ShopsView shops={shops} tenants={tenants} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} />}
+             {activeTab === 'shops' && <ShopsView shops={shops} tenants={tenants} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} user={user} />}
              {activeTab === 'payments' && <PaymentsView tenants={tenants} shops={shops} payments={payments} api={api} onRefresh={loadAllData} formatMoney={moneyFormatter} user={user} />}
-             {activeTab === 'expenses' && <ExpensesView expenses={expenses} setExpenses={setExpenses} api={api} formatMoney={moneyFormatter} />}
+             {activeTab === 'expenses' && <ExpensesView expenses={expenses} setExpenses={setExpenses} api={api} formatMoney={moneyFormatter} user={user} />}
              {activeTab === 'admin' && (user?.role === 'admin' || !!adminData) && <AdminView api={api} formatMoney={moneyFormatter} onImpersonate={handleImpersonate} />}
              {activeTab === 'profile' && user && <ProfileView user={user} api={api} onRefreshUser={handleRefreshUser} settings={settings} setSettings={setSettings} supabase={supabase} tenants={tenants} shops={shops} />}
            </div>
@@ -709,7 +709,8 @@ function TenantsView({ tenants, shops, payments, api, onRefresh, formatMoney, us
      phone: formData.get('phone'),
      rent_amount: Number(formData.get('rent')),
      shop_id: formData.get('shop_id'),
-     deposit: Number(formData.get('deposit') || 0) 
+     deposit: Number(formData.get('deposit') || 0),
+     user_id: String(user.id) // SÉCURITÉ : FORCE L'ID DE L'UTILISATEUR CONNECTÉ
    };
 
    const res = await api.post('/tenants', body);
@@ -723,7 +724,8 @@ function TenantsView({ tenants, shops, payments, api, onRefresh, formatMoney, us
    const body = {
      name: formData.get('name'),
      phone: formData.get('phone'),
-     rent_amount: Number(formData.get('rent'))
+     rent_amount: Number(formData.get('rent')),
+     user_id: String(user.id) // SÉCURITÉ : MAINTIENT L'ID UTILISATEUR
    };
    const res = await api.put(`/tenants/${editingTenant.id}`, body);
    if (res && !res.error) { setEditingTenant(null); onRefresh(); }
@@ -867,10 +869,15 @@ function TenantsView({ tenants, shops, payments, api, onRefresh, formatMoney, us
 /**
  * SHOPS VIEW
  */
-function ShopsView({ shops, tenants, payments, api, onRefresh, formatMoney }) {
+function ShopsView({ shops, tenants, payments, api, onRefresh, formatMoney, user }) {
  const handleAddShop = async (e) => {
    e.preventDefault();
-   const body = { name: e.target.name.value, price: Number(e.target.price.value), status: 'available' };
+   const body = { 
+     name: e.target.name.value, 
+     price: Number(e.target.price.value), 
+     status: 'available',
+     user_id: String(user.id) // SÉCURITÉ : FORCE L'ID PROPRIÉTAIRE
+   };
    const res = await api.post('/shops', body);
    if (res && res.id) { e.target.reset(); onRefresh(); }
  };
@@ -1006,9 +1013,12 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
    const totalAmount = tenant.rent_amount * monthsCovered;
 
    const res = await api.post('/payments', {
-     tenant_id: tenantIdNum, amount: totalAmount,      
-     month: startMonth, months_covered: monthsCovered, 
-     status: 'Paid'
+     tenant_id: tenantIdNum, 
+     amount: totalAmount,      
+     month: startMonth, 
+     months_covered: monthsCovered, 
+     status: 'Paid',
+     user_id: String(user.id) // SÉCURITÉ : FORCE L'ID PROPRIÉTAIRE
    });
 
    if (res && !res.error) {
@@ -1176,12 +1186,17 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
 /**
  * EXPENSES VIEW
  */
-function ExpensesView({ expenses, setExpenses, api, formatMoney }) {
+function ExpensesView({ expenses, setExpenses, api, formatMoney, user }) {
  const [newExpense, setNewExpense] = useState({ description: '', amount: '', category: 'Maintenance' });
 
  const handleSubmit = async (e) => {
    e.preventDefault();
-   const res = await api.post('/expenses', newExpense);
+   // SÉCURITÉ : ON INJECTE L'ID UTILISATEUR DANS L'OBJET AVANT ENVOI
+   const expenseData = {
+     ...newExpense,
+     user_id: String(user.id)
+   };
+   const res = await api.post('/expenses', expenseData);
    if (res && !res.error) {
      setExpenses([res, ...expenses]); 
      setNewExpense({ description: '', amount: '', category: 'Maintenance' });
