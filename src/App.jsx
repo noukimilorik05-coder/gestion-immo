@@ -661,8 +661,8 @@ function DashboardView({ tenants, shops, payments, expenses, formatMoney, settin
           <div>
             <h3 className="text-xl font-black mb-2 uppercase tracking-tighter">Note de Gestion</h3>
             <p className="text-indigo-100 text-sm leading-relaxed italic font-bold">
-               Votre taux d'occupation actuel est de <span className="text-white underline font-black">{occupancyRate}%</span>. 
-               Votre base imposable bénéficie d'un abattement de <span className="text-white font-black">{settings.abattement}%</span> avant impôt de {settings.tauxImpot}%.
+                Votre taux d'occupation actuel est de <span className="text-white underline font-black">{occupancyRate}%</span>. 
+                Votre base imposable bénéficie d'un abattement de <span className="text-white font-black">{settings.abattement}%</span> avant impôt de {settings.tauxImpot}%.
             </p>
           </div>
           <div className="mt-8 pt-8 border-t border-indigo-500">
@@ -965,25 +965,25 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
   let message = "";
 
   if (type === 'recu') {
-     // MESSAGE DE CONFIRMATION DE PAIEMENT
-     message = `*REÇU DE LOYER NUMÉRIQUE*%0A` +
-       `--------------------------------%0A` +
-       `Bonjour *${tenant.name}*,%0A%0A` +
-       `Nous confirmons la réception de votre paiement :%0A%0A` +
-       `🏠 *Boutique :* ${shop?.name || 'N/A'}%0A` +
-       `📅 *Date :* ${datePaiement}%0A` +
-       `💳 *Montant :* ${formatMoney(payment.amount)}%0A` +
-       `⏳ *Couverture :* ${payment.months_covered} mois%0A` +
-       `🚨 *PROCHAINE ÉCHÉANCE : ${dateEcheance}*%0A%0A` +
-       `Merci de votre confiance !`;
+      // MESSAGE DE CONFIRMATION DE PAIEMENT
+      message = `*REÇU DE LOYER NUMÉRIQUE*%0A` +
+        `--------------------------------%0A` +
+        `Bonjour *${tenant.name}*,%0A%0A` +
+        `Nous confirmons la réception de votre paiement :%0A%0A` +
+        `🏠 *Boutique :* ${shop?.name || 'N/A'}%0A` +
+        `📅 *Date :* ${datePaiement}%0A` +
+        `💳 *Montant :* ${formatMoney(payment.amount)}%0A` +
+        `⏳ *Couverture :* ${payment.months_covered} mois%0A` +
+        `🚨 *PROCHAINE ÉCHÉANCE : ${dateEcheance}*%0A%0A` +
+        `Merci de votre confiance !`;
   } else {
-     // MESSAGE DE RELANCE (POUR LES RETARDS)
-     message = `*RAPPEL DE PAIEMENT*%0A` +
-       `--------------------------------%0A` +
-       `Bonjour *${tenant.name}*,%0A%0A` +
-       `Sauf erreur de notre part, le loyer de la boutique *${shop?.name || 'N/A'}* est arrivé à échéance.%0A%0A` +
-       `Merci de bien vouloir régulariser votre situation dès que possible.%0A%0A` +
-       `_Si le paiement a déjà été effectué, merci d'ignorer ce message._`;
+      // MESSAGE DE RELANCE (POUR LES RETARDS)
+      message = `*RAPPEL DE PAIEMENT*%0A` +
+        `--------------------------------%0A` +
+        `Bonjour *${tenant.name}*,%0A%0A` +
+        `Sauf erreur de notre part, le loyer de la boutique *${shop?.name || 'N/A'}* est arrivé à échéance.%0A%0A` +
+        `Merci de bien vouloir régulariser votre situation dès que possible.%0A%0A` +
+        `_Si le paiement a déjà été effectué, merci d'ignorer ce message._`;
   }
 
   // Correction automatique du numéro Cameroun
@@ -997,7 +997,7 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
    e.preventDefault(); 
    const formData = new FormData(e.target);
    const tenantIdNum = Number(formData.get('tenant_id'));
-   const startMonth = formData.get('month');           
+   const startMonth = formData.get('month');            
    const monthsCovered = parseInt(formData.get('months_covered')); 
 
    const tenant = tenants.find(t => Number(t.id) === tenantIdNum);
@@ -1413,7 +1413,14 @@ function ProfileView({ user, api, onRefreshUser, settings, setSettings, supabase
            <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Nom de la Propriété</label>
            <input name="nom_propriete" defaultValue={user?.nom_propriete || ""} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-indigo-500" required />
          </div>
-         <button type="submit" disabled={loading} className="w-full p-6 bg-slate-900 text-white rounded-3xl font-black uppercase tracking-widest">
+
+         {/* BLOC DEBUG ID SYSTÈME */}
+         <div className="mt-4 p-4 bg-slate-100 rounded-2xl border border-slate-200">
+           <p className="text-[10px] font-black uppercase text-slate-400">ID Système (DEBUG)</p>
+           <p className="text-xs font-mono font-bold text-slate-600 break-all">{user?.id}</p>
+         </div>
+
+         <button type="submit" disabled={loading} className="w-full p-6 bg-slate-900 text-white rounded-3xl font-black uppercase tracking-widest mt-6">
            Sauvegarder les modifications du compte
          </button>
        </form>
