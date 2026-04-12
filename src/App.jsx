@@ -235,13 +235,18 @@ export default function App() {
      });
      const data = await res.json();
      if (res.ok && data.token) {
+       // ✅ À FAIRE : Utilise uniquement l'id fourni par Supabase
+       const userToSet = {
+         ...data.user,
+         id: String(data.user.id) // On s'assure que c'est une chaîne de caractères
+       };
        localStorage.setItem('token', data.token);
-       localStorage.setItem('user', JSON.stringify(data.user));
+       localStorage.setItem('user', JSON.stringify(userToSet));
        setToken(data.token);
-       setUser(data.user);
+       setUser(userToSet);
        
        // PIÈGE : LOG DE CONNEXION
-       addLog(data.user, "CONNEXION", "L'utilisateur s'est connecté");
+       addLog(userToSet, "CONNEXION", "L'utilisateur s'est connecté");
 
      } else {
        alert(data.message || "Email ou mot de passe incorrect.");
@@ -710,7 +715,8 @@ function TenantsView({ tenants, shops, payments, api, onRefresh, formatMoney, us
      rent_amount: Number(formData.get('rent')),
      shop_id: formData.get('shop_id'),
      deposit: Number(formData.get('deposit') || 0),
-     user_id: String(user.id) // SÉCURITÉ : FORCE L'ID DE L'UTILISATEUR CONNECTÉ
+     // ✅ À FAIRE : Utilise uniquement l'id fourni par l'utilisateur connecté
+     user_id: String(user.id) 
    };
 
    const res = await api.post('/tenants', body);
@@ -876,7 +882,8 @@ function ShopsView({ shops, tenants, payments, api, onRefresh, formatMoney, user
      name: e.target.name.value, 
      price: Number(e.target.price.value), 
      status: 'available',
-     user_id: String(user.id) // SÉCURITÉ : FORCE L'ID PROPRIÉTAIRE
+     // ✅ À FAIRE : Utilise uniquement l'id de l'utilisateur connecté
+     user_id: String(user.id) 
    };
    const res = await api.post('/shops', body);
    if (res && res.id) { e.target.reset(); onRefresh(); }
@@ -1004,7 +1011,7 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
    e.preventDefault(); 
    const formData = new FormData(e.target);
    const tenantIdNum = Number(formData.get('tenant_id'));
-   const startMonth = formData.get('month');            
+   const startMonth = formData.get('month');             
    const monthsCovered = parseInt(formData.get('months_covered')); 
 
    const tenant = tenants.find(t => Number(t.id) === tenantIdNum);
@@ -1018,7 +1025,8 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
      month: startMonth, 
      months_covered: monthsCovered, 
      status: 'Paid',
-     user_id: String(user.id) // SÉCURITÉ : FORCE L'ID PROPRIÉTAIRE
+     // ✅ À FAIRE : Utilise uniquement l'id de l'utilisateur connecté
+     user_id: String(user.id) 
    });
 
    if (res && !res.error) {
@@ -1144,7 +1152,7 @@ function PaymentsView({ tenants, shops, payments, api, onRefresh, formatMoney, u
 
      {showAdd && (
        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 z-[60] no-print text-slate-800 font-bold">
-         <form onSubmit={handlePaymentSubmit} className="bg-white rounded-[40px] p-6 md:p-10 w-full max-w-lg space-y-6 shadow-2xl animate-in zoom-in-95 overflow-y-auto max-h-[90vh]">
+         <form onSubmit={handlePaymentSubmit} className="bg-white rounded-[40px) p-6 md:p-10 w-full max-w-lg space-y-6 shadow-2xl animate-in zoom-in-95 overflow-y-auto max-h-[90vh]">
            <h3 className="text-2xl font-black tracking-tight text-center uppercase">Validation Encaissement</h3>
            <div className="space-y-4">
              <select name="tenant_id" className="w-full p-5 bg-slate-50 rounded-2xl outline-none ring-indigo-500 focus:ring-2 font-bold appearance-none" required
@@ -1194,6 +1202,7 @@ function ExpensesView({ expenses, setExpenses, api, formatMoney, user }) {
    // SÉCURITÉ : ON INJECTE L'ID UTILISATEUR DANS L'OBJET AVANT ENVOI
    const expenseData = {
      ...newExpense,
+     // ✅ À FAIRE : Utilise uniquement l'id de l'utilisateur connecté
      user_id: String(user.id)
    };
    const res = await api.post('/expenses', expenseData);
